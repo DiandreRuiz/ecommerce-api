@@ -286,7 +286,7 @@ def create_order():
     db.session.add(new_order)
     db.session.commit()
 
-    return orders_schema.jsonify(new_order), 200
+    return orders_schema.jsonify(new_order), 201
 
 
 @app.route("/orders/<int:order_id>/add_product/<int:product_id>", methods=["PUT"])
@@ -345,3 +345,14 @@ def get_all_orders_for_userid(user_id):
     # Get all orders for this user_id
     orders = user.orders
     return orders_schema_many.jsonify(orders), 200
+
+
+@app.route("/orders/<int:order_id>/products", methods=["GET"])
+def get_order_products_for_orderid(order_id):
+    # Validate order_id exists
+    order = db.session.get(Order, order_id)
+    if not order:
+        return jsonify({"message": f"Invalid order_id: {order_id}"}), 404
+
+    products = order.products
+    return products_schema_many.jsonify(products), 200
