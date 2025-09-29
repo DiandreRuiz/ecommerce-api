@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_marshmallow import Marshmallow
+from marshmallow import ValidationError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy import Table, Column, ForeignKey, String, DateTime, Float, select
 from typing import List
@@ -27,7 +28,7 @@ db = SQLAlchemy(model_class=Base)
 db.init_app(app)
 marsh = Marshmallow(app)
 
-#--- Models & Junction Tables ---#
+# --- Models & Junction Tables ---#
 order_product = Table(
     "order_product",
     Base.metadata,
@@ -69,35 +70,157 @@ class Product(Base):
         "Order", secondary="order_product", back_populates="products"
     )
 
-#--- Schemas ---#
+
+# --- Schemas ---#
 # These schemas define how de-serialization and serialization will
 # take place on requests and responses
+
 
 class UserSchema(marsh.SQLAlchemyAutoSchema):
     class Meta:
         model = User
+
 
 class OrderSchema(marsh.SQLAlchemyAutoSchema):
     class Meta:
         model = User
         include_fk = True
 
+
 class ProductSchema(marsh.SQLAlchemyAutoSchema):
     class Meta:
         model = Product
         include_fk = True
- 
-# schema object instantiation which has 
-# (de)serialization methods from their parent classes       
+
+
+# schema object instantiation which has
+# (de)serialization methods from their parent classes
 users_schema = UserSchema()
 orders_schema = OrderSchema()
 products_schema = ProductSchema()
+users_schema_many = UserSchema(many=True)
+orders_schema_many = OrderSchema(many=True)
+products_schema_many = ProductSchema(many=True)
 
-#--- API Routes ---#
+
+# --- API Routes ---#
+
+# /users
+
+
 @app.route("/users", methods=["GET"])
 def get_users():
     query = select(User)
     users = db.session.execute(query).scalars().all()
-    
-    return users_schema.jsonify(users)
 
+    return users_schema_many.jsonify(users)
+
+
+@app.route("/users/<int:id>", methods=["GET"])
+def get_user_by_id(id):
+    user = db.session.get(User, id)
+    if not user:
+        return jsonify({"message": "Invalid user ID"}), 400
+    return users_schema.jsonify(user), 200
+
+
+@app.route("/users", methods=["POST"])
+def create_user():
+    # Try to de-serialize request data from request JSON
+    try:
+        user_data = users_schema.jsonify(request.json)
+    except ValidationError as e:
+        return jsonify(e.messages), 400
+
+    # Create new user with validated data
+    new_user = User(
+        name=user_data["name"], email=user_data["email"], address=user_data["address"]
+    )
+    db.session.add(new_user)
+    db.session.commit()
+
+    return users_schema.jsonify(new_user), 201
+
+
+@app.route("/users/<int:id>", methods=["PUT"])
+def update_user(id):
+    # Try to locate the requested user
+    user = db.session.get(User, id)
+    if not user:
+        return jsonify({"message": "Invalid user ID"}), 400
+
+    # Try to deserialize request data into user object
+    # NOTE: Because this is a PUT not PATCH operation, we expect
+    # a full, valid user object in JSON format
+    try:
+        user_data = users_schema.load(request.json)
+    except ValidationError as e:
+        return jsonify(e.messages), 400
+
+    # If validated request, update user information
+    user.name = user_data["name"]
+    user.email = user_data["email"]
+    user.address = user_data["address"]
+
+    db.session.commit()
+    return users_schema.jsonify(user_data), 200
+
+
+@app.route("/users/<int:id>", methods=["DELETE"])
+def delete_user(id):
+    user = db.session.get(User, id)
+    if not user:
+        return jsonify({"message": "Invalid user ID"}), 400
+
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify({"message": f"succesfully deleted user ID: {id}"}), 200
+
+
+# /products
+@app.route("/products", methods=["GET"])
+def get_products():
+    query = select(Product)
+    products = db.session.execute(query).scalars().all()
+
+    return products_schema_many.jsonify(products), 200
+
+
+@app.route("/products/<int:id>", methods=["GET"])
+def get_product_by_id(id):
+    product = db.session.get(Product, id)
+    if not product:
+        return jsonify({"message": f"Invalid product ID: {id}"}), 400
+
+    return products_schema.jsonify(product), 200
+
+
+@app.route("/products", methods=["POST"])
+def create_product():
+    # Try to de-serialize request data into valid product ORM object
+    try:
+        product_data = products_schema.load(request.json)
+    except ValidationError as e:
+        return jsonify(e.messages), 400
+
+    # Product is 'product-schema' python dict that needs to be
+    # converted into an ORM Product instantiation
+    new_product = Product(
+        product_name=product_data["product_name"], product_data=new_product["price"]
+    )
+    db.session.add(new_product)
+    db.session.commit()
+
+    return products_schema.jsonify(product_data), 201
+
+
+@app.route("/product/<int:id>", methods=["PUT"])
+def update_product(id):
+    product = db.session.get(Product, id)
+    if not product:
+        return jsonify({"message": f"Invalid product id: {id}"}), 400
+    # Try to validate contents of PUT request json
+    try:
+        product_data = products_schema.load(request.json)
+    except ValidationError as e:
+        return jsonify(e.messages), 400
