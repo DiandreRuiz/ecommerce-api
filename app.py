@@ -7,9 +7,11 @@ from sqlalchemy import Table, Column, ForeignKey, String, DateTime, Float, selec
 from typing import List
 from dotenv import load_dotenv
 from datetime import datetime
+import os
 
 # DB Connection string
-DB_CONN_STR = load_dotenv("DB_CONN_STR")
+load_dotenv()
+DB_CONN_STR = os.getenv("DB_CONN_STR")
 
 # Create flask app client w/ name of __main__ or app.py
 app = Flask(__name__)
@@ -32,8 +34,8 @@ marsh = Marshmallow(app)
 order_product = Table(
     "order_product",
     Base.metadata,
-    Column("order_id", ForeignKey("order.id"), primary_key=True),
-    Column("product_id", ForeignKey("product.id"), primary_key=True),
+    Column("order_id", ForeignKey("orders.id"), primary_key=True),
+    Column("product_id", ForeignKey("products.id"), primary_key=True),
 )
 
 
@@ -356,3 +358,12 @@ def get_order_products_for_orderid(order_id):
 
     products = order.products
     return products_schema_many.jsonify(products), 200
+
+
+# Check dunder so if called directly, this
+# modules creates all the tables from scratch
+if __name__ == "__main__":
+    with app.app_context():
+        db.create_all()
+
+app.run(debug=True)
