@@ -83,7 +83,7 @@ class UserSchema(marsh.SQLAlchemyAutoSchema):
 
 class OrderSchema(marsh.SQLAlchemyAutoSchema):
     class Meta:
-        model = User
+        model = Order
         include_fk = True
 
 
@@ -120,7 +120,7 @@ def get_users():
 def get_user_by_id(id):
     user = db.session.get(User, id)
     if not user:
-        return jsonify({"message": "Invalid user ID"}), 400
+        return jsonify({"message": "Invalid user ID"}), 404
     return users_schema.jsonify(user), 200
 
 
@@ -147,7 +147,7 @@ def update_user(id):
     # Try to locate the requested user
     user = db.session.get(User, id)
     if not user:
-        return jsonify({"message": "Invalid user ID"}), 400
+        return jsonify({"message": "Invalid user ID"}), 404
 
     # Try to deserialize request data into user object
     # NOTE: Because this is a PUT not PATCH operation, we expect
@@ -170,7 +170,7 @@ def update_user(id):
 def delete_user(id):
     user = db.session.get(User, id)
     if not user:
-        return jsonify({"message": "Invalid user ID"}), 400
+        return jsonify({"message": "Invalid user ID"}), 404
 
     db.session.delete(user)
     db.session.commit()
@@ -190,7 +190,7 @@ def get_products():
 def get_product_by_id(id):
     product = db.session.get(Product, id)
     if not product:
-        return jsonify({"message": f"Invalid product ID: {id}"}), 400
+        return jsonify({"message": f"Invalid product ID: {id}"}), 404
 
     return products_schema.jsonify(product), 200
 
@@ -218,9 +218,130 @@ def create_product():
 def update_product(id):
     product = db.session.get(Product, id)
     if not product:
-        return jsonify({"message": f"Invalid product id: {id}"}), 400
+        return jsonify({"message": f"Invalid product id: {id}"}), 404
     # Try to validate contents of PUT request json
     try:
         product_data = products_schema.load(request.json)
     except ValidationError as e:
         return jsonify(e.messages), 400
+
+    # Update the ORM with requested data
+    product.product_name = product_data["product_name"]
+    product.price = product_data["price"]
+    db.session.commit()
+
+    return products_schema.jsonify(product), 200
+
+
+@app.route("/products/<int:id>", methods=["DELETE"])
+def delete_product(id):
+    product = db.session.get(Product, id)
+    if not product:
+        return jsonify({"message": f"Invalid product ID: {id}"}), 404
+
+    db.session.delete(product)
+    db.session.commit()
+
+    return jsonify({"message": f"Succesfully deleted Product ID: {id}"}), 200
+
+
+# Orders
+
+
+@app.route("/orders", methods=["GET"])
+def get_orders():
+    query = select(Order)
+    orders = db.session.execute(query).scalars().all()
+
+    return orders_schema_many.jsonify(orders), 200
+
+
+@app.route("/orders/<int:id>", methods=["GET"])
+def get_order_by_id(id):
+    order = db.session.get(Order, id)
+    if not order:
+        return jsonify({"message": f"Invalid order ID: {id}"}), 404
+
+    return orders_schema.jsonify(order), 200
+
+
+@app.route("/orders", methods=["POST"])
+def create_order():
+    # Validate request.json info for this Order row
+    try:
+        order_data = orders_schema.load(request.json)
+    except ValidationError as e:
+        return jsonify(e.messages), 400
+
+    # Validate that the user_id given in order_data exists
+    user = db.session.get(User, order_data["user_id"])
+    if not user:
+        return jsonify({"message": f"Invalid user ID: {order_data["user_id"]}"}), 404
+
+    # Create entry in database and commit
+    new_order = Order(
+        order_date_time=order_data["order_date_time"],
+        user_id=order_data["user_id"],
+    )
+    db.session.add(new_order)
+    db.session.commit()
+
+    return orders_schema.jsonify(new_order), 200
+
+
+@app.route("/orders/<int:order_id>/add_product/<int:product_id>", methods=["PUT"])
+def add_product_to_order(order_id, product_id):
+    # Validate both IDs given
+    order = db.session.get(Order, order_id)
+    product = db.session.get(Product, product_id)
+    if not order:
+        return jsonify({"message": f"Invalid order ID: {order_id}"}), 404
+    if not product:
+        return jsonify({"message": f"Invalid product ID: {product_id}"}), 404
+
+    # Check for uniqueness to prevent duplicates and avoid IntegrityError from SQLAlchemy
+    if product in order.products:
+        return jsonify(
+            {"message": f"product id: {product_id} already in order ID: {order_id}"}
+        )
+
+    order.products.append(product)
+    db.session.commit()
+
+    return orders_schema.jsonify(order), 200
+
+
+@app.route("/orders/<int:order_id>/remove_product/<int:product_id>", methods=["DELETE"])
+def delete_product_from_order(order_id, product_id):
+    # Validate existence of order
+    order = db.session.get(Order, order_id)
+    if not order:
+        return jsonify({"message": f"Invalid order ID: {order_id}"}), 404
+    # Validate existence of product
+    product = db.session.get(Product, product_id)
+    if not product:
+        return jsonify({"message": f"Invalid product ID: {product_id}"}), 404
+    # Validate relationship between order and product
+    if product not in order.products:
+        return jsonify({"message": f"Product {product_id} not in {order_id}"}), 400
+
+    # Remove product from this order
+    order.products.remove(product)
+    db.session.commit()
+
+    return (
+        jsonify({"message": f"Removed product {product_id} from order {order_id}"}),
+        200,
+    )
+
+
+@app.route("/orders/user/<int:user_id>", methods=["GET"])
+def get_all_orders_for_userid(user_id):
+    # Validate user_id
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"message": f"Invalid user_id: {user_id}"}), 404
+
+    # Get all orders for this user_id
+    orders = user.orders
+    return orders_schema_many.jsonify(orders), 200
