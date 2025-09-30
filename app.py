@@ -216,7 +216,7 @@ def create_product():
     return products_schema.jsonify(product_data), 201
 
 
-@app.route("/product/<int:id>", methods=["PUT"])
+@app.route("/products/<int:id>", methods=["PUT"])
 def update_product(id):
     product = db.session.get(Product, id)
     if not product:
