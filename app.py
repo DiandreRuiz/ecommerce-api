@@ -208,7 +208,7 @@ def create_product():
     # Product is 'product-schema' python dict that needs to be
     # converted into an ORM Product instantiation
     new_product = Product(
-        product_name=product_data["product_name"], product_data=new_product["price"]
+        product_name=product_data["product_name"], price=product_data["price"]
     )
     db.session.add(new_product)
     db.session.commit()
