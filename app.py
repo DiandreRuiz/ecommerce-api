@@ -130,7 +130,7 @@ def get_user_by_id(id):
 def create_user():
     # Try to de-serialize request data from request JSON
     try:
-        user_data = users_schema.jsonify(request.json)
+        user_data = users_schema.load(request.json)
     except ValidationError as e:
         return jsonify(e.messages), 400
 
